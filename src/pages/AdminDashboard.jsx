@@ -16,14 +16,16 @@ import {
   TrendingUp,
   Eye,
   Heart,
-  Calendar
+  Calendar,
+  FileText // إضافة أيقونة الفصول
 } from 'lucide-react';
 
 // Import admin components
 import MangaManagement from '../components/admin/MangaManagement';
 import UserManagement from '../components/admin/UserManagement';
 import AddManga from '../components/admin/AddManga';
-import AddChapter from '../components/admin/AddChapter'; // إضافة الاستيراد
+import AddChapter from '../components/admin/AddChapter';
+import ChapterManagement from '../components/admin/ChapterManagement'; // إضافة استيراد إدارة الفصول
 import Statistics from '../components/admin/Statistics';
 
 export default function AdminDashboard() {
@@ -94,8 +96,9 @@ export default function AdminDashboard() {
   const sidebarItems = [
     { path: '/admin', label: 'لوحة التحكم', icon: BarChart3 },
     { path: '/admin/manga', label: 'إدارة المانغا', icon: BookOpen },
+    { path: '/admin/chapters', label: 'إدارة الفصول', icon: FileText }, // إضافة إدارة الفصول
     { path: '/admin/add-manga', label: 'إضافة مانغا', icon: Plus },
-    { path: '/admin/add-chapter', label: 'إضافة فصل', icon: Plus }, // إضافة العنصر
+    { path: '/admin/add-chapter', label: 'إضافة فصل', icon: Plus },
     { path: '/admin/users', label: 'إدارة المستخدمين', icon: Users },
     { path: '/admin/statistics', label: 'الإحصائيات', icon: TrendingUp },
     { path: '/admin/settings', label: 'الإعدادات', icon: Settings }
@@ -282,7 +285,6 @@ export default function AdminDashboard() {
                           إضافة مانغا جديدة
                         </Link>
                       </Button>
-                      {/* إضافة الزر الجديد */}
                       <Button asChild>
                         <Link to="/admin/add-chapter">
                           <Plus className="h-4 w-4 mr-2" />
@@ -293,6 +295,12 @@ export default function AdminDashboard() {
                         <Link to="/admin/manga">
                           <BookOpen className="h-4 w-4 mr-2" />
                           إدارة المانغا
+                        </Link>
+                      </Button>
+                      <Button variant="outline" asChild>
+                        <Link to="/admin/chapters">
+                          <FileText className="h-4 w-4 mr-2" />
+                          إدارة الفصول
                         </Link>
                       </Button>
                       <Button variant="outline" asChild>
@@ -307,8 +315,9 @@ export default function AdminDashboard() {
               </div>
             } />
             <Route path="/manga" element={<MangaManagement />} />
+            <Route path="/chapters" element={<ChapterManagement />} /> {/* إضافة مسار إدارة الفصول */}
             <Route path="/add-manga" element={<AddManga />} />
-            <Route path="/add-chapter" element={<AddChapter />} /> {/* إضافة المسار */}
+            <Route path="/add-chapter" element={<AddChapter />} />
             <Route path="/users" element={<UserManagement />} />
             <Route path="/statistics" element={<Statistics />} />
             <Route path="/settings" element={
