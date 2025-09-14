@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
 import { Upload, BookOpen, Save, X } from 'lucide-react';
@@ -75,14 +75,25 @@ export default function AddManga() {
     }
   }
 
-  async function uploadCoverImage(mangaId) {
+  async function uploadCoverImage() {
     if (!coverImage) return null;
     
     try {
-      const imageRef = ref(storage, `manga-covers/${mangaId}/${coverImage.name}`);
-      const snapshot = await uploadBytes(imageRef, coverImage);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      return downloadURL;
+      const formData = new FormData();
+      formData.append('image', coverImage);
+      
+      const response = await fetch('https://api.imgbb.com/1/upload?key=58c8ffbe992840b5b93b5bd1c54b6bdc', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        return data.data.url;
+      } else {
+        throw new Error('فشل في رفع الصورة إلى ImgBB');
+      }
     } catch (error) {
       console.error('خطأ في رفع الصورة:', error);
       throw error;
@@ -118,7 +129,7 @@ export default function AddManga() {
       
       // رفع صورة الغلاف إذا تم اختيارها
       if (coverImage) {
-        const coverImageUrl = await uploadCoverImage(docRef.id);
+        const coverImageUrl = await uploadCoverImage();
         await updateDoc(doc(db, 'manga', docRef.id), {
           coverImage: coverImageUrl
         });
@@ -415,4 +426,3 @@ export default function AddManga() {
     </div>
   );
 }
-
