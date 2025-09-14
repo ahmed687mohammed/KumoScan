@@ -10,5 +10,26 @@
   </head>
   <body>
     <div id="root"></div>
+<script>
+  // حل مشكلة التوجيه في Netlify
+  (function() {
+    const path = window.location.pathname;
+    const isFile = path.includes('.');
+    
+    if (!isFile && path !== '/') {
+      sessionStorage.setItem('redirect', path);
+      window.history.replaceState({}, '', '/');
+    }
+    
+    // بعد تحميل التطبيق، استعادة المسار إذا لزم الأمر
+    window.addEventListener('load', function() {
+      const redirectPath = sessionStorage.getItem('redirect');
+      if (redirectPath) {
+        sessionStorage.removeItem('redirect');
+        window.history.replaceState({}, '', redirectPath);
+      }
+    });
+  })();
+</script>
   </body>
 </html>
