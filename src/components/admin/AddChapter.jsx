@@ -23,55 +23,26 @@ export default function AddChapter() {
   const [loading, setLoading] = useState(false);
   const [mangaLoading, setMangaLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
 
   // جلب قائمة المانغا من Firebase
   useEffect(() => {
     async function fetchMangaList() {
       try {
         setMangaLoading(true);
-        setError('');
-        console.log('جاري جلب قائمة المانغا...');
-        
         const mangaSnapshot = await getDocs(collection(db, 'manga'));
-        
-        if (mangaSnapshot.empty) {
-          console.log('لا توجد مانغا في قاعدة البيانات');
-          setMessage('لا توجد مانغا متاحة. يرجى إضافة مانغا أولاً.');
-          setMangaLoading(false);
-          return;
-        }
-        
-        const mangaData = mangaSnapshot.docs
-          .map(doc => {
-            try {
-              const data = doc.data();
-              return {
-                id: doc.id,
-                title: data.title || 'بدون عنوان',
-                coverImage: data.coverImage || '/placeholder-manga.jpg',
-                chaptersCount: data.chaptersCount || 0,
-                ...data
-              };
-            } catch (e) {
-              console.error('خطأ في معالجة بيانات المانغا:', e, doc.id);
-              return null;
-            }
-          })
-          .filter(manga => manga !== null);
-        
-        console.log('تم جلب المانغا:', mangaData.length);
+        const mangaData = mangaSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
         setMangaList(mangaData);
         
         // إذا كان هناك mangaId في params، تأكد من أنه موجود في القائمة
         if (mangaIdFromParams && mangaData.some(manga => manga.id === mangaIdFromParams)) {
-          console.log('تم تعيين المانغا من المعلمات:', mangaIdFromParams);
           setSelectedMangaId(mangaIdFromParams);
         }
       } catch (error) {
         console.error('خطأ في جلب قائمة المانغا:', error);
-        setError('حدث خطأ في جلب قائمة المانغا. تأكد من اتصالك بالإنترنت.');
-        setMessage('حدث خطأ في جلب قائمة المانغا. تأكد من اتصالك بالإنترنت.');
+        setMessage('حدث خطأ في جلب قائمة المانغا');
       } finally {
         setMangaLoading(false);
       }
@@ -89,16 +60,11 @@ export default function AddChapter() {
   }
 
   function handleImageChange(e, index) {
-    try {
-      const file = e.target.files[0];
-      if (file) {
-        const newPages = [...pages];
-        newPages[index] = { file, preview: URL.createObjectURL(file) };
-        setPages(newPages);
-      }
-    } catch (error) {
-      console.error('خطأ في معالجة الصورة:', error);
-      setMessage('حدث خطأ في معالجة الصورة. يرجى المحاولة مرة أخرى.');
+    const file = e.target.files[0];
+    if (file) {
+      const newPages = [...pages];
+      newPages[index] = { file, preview: URL.createObjectURL(file) };
+      setPages(newPages);
     }
   }
 
@@ -122,20 +88,16 @@ export default function AddChapter() {
         body: formData
       });
       
-      if (!response.ok) {
-        throw new Error(`خطأ في الرفع: ${response.status}`);
-      }
-      
       const data = await response.json();
       
       if (data.success) {
         return data.data.url;
       } else {
-        throw new Error(data.error?.message || 'فشل في رفع الصورة إلى ImgBB');
+        throw new Error('فشل في رفع الصورة إلى ImgBB');
       }
     } catch (error) {
       console.error('خطأ في رفع الصورة:', error);
-      throw new Error(`فشل في رفع الصورة: ${error.message}`);
+      throw error;
     }
   }
 
@@ -160,22 +122,13 @@ export default function AddChapter() {
     try {
       setLoading(true);
       setMessage('');
-      setError('');
 
       // رفع جميع صور الصفحات إلى ImgBB
       const pageUrls = [];
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
+      for (const page of pages) {
         if (page && page.file) {
-          try {
-            console.log(`جاري رفع الصفحة ${i + 1}...`);
-            const pageUrl = await uploadPageImage(page.file);
-            pageUrls.push(pageUrl);
-            console.log(`تم رفع الصفحة ${i + 1} بنجاح`);
-          } catch (error) {
-            console.error(`فشل في رفع الصفحة ${i + 1}:`, error);
-            throw new Error(`فشل في رفع الصفحة ${i + 1}: ${error.message}`);
-          }
+          const pageUrl = await uploadPageImage(page.file);
+          pageUrls.push(pageUrl);
         }
       }
 
@@ -189,7 +142,6 @@ export default function AddChapter() {
         createdAt: serverTimestamp()
       };
 
-      console.log('جاري إضافة الفصل إلى Firestore...');
       const docRef = await addDoc(collection(db, 'manga', selectedMangaId, 'chapters'), chapterData);
       
       // تحديث عدد فصول المانغا
@@ -198,7 +150,6 @@ export default function AddChapter() {
         lastUpdated: serverTimestamp()
       });
 
-      console.log('تم إضافة الفصل بنجاح:', docRef.id);
       setMessage('تم إضافة الفصل بنجاح!');
       
       // إعادة تعيين النموذج
@@ -215,7 +166,6 @@ export default function AddChapter() {
 
     } catch (error) {
       console.error('خطأ في إضافة الفصل:', error);
-      setError(error.message);
       setMessage('حدث خطأ في إضافة الفصل. حاول مرة أخرى.');
     } finally {
       setLoading(false);
@@ -233,40 +183,8 @@ export default function AddChapter() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md mx-auto p-6">
-          <BookOpen className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">حدث خطأ</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <Button onClick={() => window.location.reload()}>
-            إعادة المحاولة
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!mangaLoading && mangaList.length === 0) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md mx-auto p-6">
-          <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">لا توجد مانغا</h2>
-          <p className="text-gray-600 mb-4">
-            لم يتم العثور على أي مانغا. يرجى إضافة مانغا أولاً قبل إضافة الفصول.
-          </p>
-          <Button onClick={() => navigate('/admin/add-manga')}>
-            إضافة مانغا جديدة
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-4xl mx-auto space-y-6 p-4">
+    <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">إضافة فصل جديد</h1>
         <p className="text-gray-600 mt-2">أضف فصل جديد إلى المانغا</p>
@@ -295,13 +213,7 @@ export default function AddChapter() {
               <CardContent className="space-y-4">
                 <div>
                   <Label htmlFor="manga">اختر المانغا *</Label>
-                  <Select 
-                    value={selectedMangaId} 
-                    onValueChange={(value) => {
-                      console.log('تم اختيار المانغا:', value);
-                      setSelectedMangaId(value);
-                    }}
-                  >
+                  <Select value={selectedMangaId} onValueChange={setSelectedMangaId}>
                     <SelectTrigger>
                       <SelectValue placeholder="اختر المانغا" />
                     </SelectTrigger>
@@ -461,37 +373,23 @@ export default function AddChapter() {
                           src={page.preview}
                           alt={`معاينة الصفحة ${index + 1}`}
                           className="w-full h-48 object-contain rounded-lg mx-auto border"
-                          onError={(e) => {
-                            console.error('فشل تحميل الصورة:', page.preview);
-                            e.target.src = '/placeholder-image.jpg';
-                          }}
                         />
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          onClick={() => {
-                            const input = document.getElementById(`page-${index}`);
-                            if (input) input.click();
-                          }}
+                          onClick={() => document.getElementById(`page-${index}`).click()}
                         >
                           تغيير الصورة
                         </Button>
-                        <input
-                          id={`page-${index}`}
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleImageChange(e, index)}
-                          className="hidden"
-                        />
                       </div>
                     ) : (
                       <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                         <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                         <p className="text-sm text-gray-600">اختر صورة الصفحة</p>
                         <Input
-                          id={`page-upload-${index}`}
+                          id={`page-${index}`}
                           type="file"
                           accept="image/*"
                           onChange={(e) => handleImageChange(e, index)}
