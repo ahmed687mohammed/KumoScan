@@ -30,10 +30,26 @@ export default function AddChapter() {
       try {
         setMangaLoading(true);
         const mangaSnapshot = await getDocs(collection(db, 'manga'));
-        const mangaData = mangaSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        
+        if (mangaSnapshot.empty) {
+          setMessage('لا توجد مانغا متاحة. يرجى إضافة مانغا أولاً.');
+          setMangaLoading(false);
+          return;
+        }
+        
+        const mangaData = mangaSnapshot.docs
+          .map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              title: data.title || 'بدون عنوان',
+              coverImage: data.coverImage || '/placeholder-manga.jpg',
+              chaptersCount: data.chaptersCount || 0,
+              ...data
+            };
+          })
+          .filter(manga => manga !== null);
+        
         setMangaList(mangaData);
         
         // إذا كان هناك mangaId في params، تأكد من أنه موجود في القائمة
@@ -42,7 +58,7 @@ export default function AddChapter() {
         }
       } catch (error) {
         console.error('خطأ في جلب قائمة المانغا:', error);
-        setMessage('حدث خطأ في جلب قائمة المانغا');
+        setMessage('حدث خطأ في جلب قائمة المانغا. تأكد من اتصالك بالإنترنت.');
       } finally {
         setMangaLoading(false);
       }
@@ -183,8 +199,25 @@ export default function AddChapter() {
     );
   }
 
+  if (!mangaLoading && mangaList.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center max-w-md mx-auto p-6">
+          <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">لا توجد مانغا</h2>
+          <p className="text-gray-600 mb-4">
+            لم يتم العثور على أي مانغا. يرجى إضافة مانغا أولاً قبل إضافة الفصول.
+          </p>
+          <Button onClick={() => navigate('/admin/add-manga')}>
+            إضافة مانغا جديدة
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 p-4">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">إضافة فصل جديد</h1>
         <p className="text-gray-600 mt-2">أضف فصل جديد إلى المانغا</p>
