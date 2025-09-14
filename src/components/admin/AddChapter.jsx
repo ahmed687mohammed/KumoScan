@@ -1,24 +1,55 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { collection, addDoc, serverTimestamp, updateDoc, increment, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Upload, BookOpen, Save, X, Plus, Trash2 } from 'lucide-react';
 
 export default function AddChapter() {
   const navigate = useNavigate();
-  const { id: mangaId } = useParams();
+  const { id: mangaIdFromParams } = useParams();
+  const [mangaList, setMangaList] = useState([]);
+  const [selectedMangaId, setSelectedMangaId] = useState(mangaIdFromParams || '');
   const [formData, setFormData] = useState({
     chapterNumber: '',
     title: '',
   });
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [mangaLoading, setMangaLoading] = useState(true);
   const [message, setMessage] = useState('');
+
+  // جلب قائمة المانغا من Firebase
+  useEffect(() => {
+    async function fetchMangaList() {
+      try {
+        setMangaLoading(true);
+        const mangaSnapshot = await getDocs(collection(db, 'manga'));
+        const mangaData = mangaSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setMangaList(mangaData);
+        
+        // إذا كان هناك mangaId في params، تأكد من أنه موجود في القائمة
+        if (mangaIdFromParams && mangaData.some(manga => manga.id === mangaIdFromParams)) {
+          setSelectedMangaId(mangaIdFromParams);
+        }
+      } catch (error) {
+        console.error('خطأ في جلب قائمة المانغا:', error);
+        setMessage('حدث خطأ في جلب قائمة المانغا');
+      } finally {
+        setMangaLoading(false);
+      }
+    }
+
+    fetchMangaList();
+  }, [mangaIdFromParams]);
 
   function handleInputChange(e) {
     const { name, value } = e.target;
@@ -73,6 +104,11 @@ export default function AddChapter() {
   async function handleSubmit(e) {
     e.preventDefault();
     
+    if (!selectedMangaId) {
+      setMessage('يجب اختيار مانغا');
+      return;
+    }
+
     if (!formData.chapterNumber.trim()) {
       setMessage('رقم الفصل مطلوب');
       return;
@@ -106,10 +142,10 @@ export default function AddChapter() {
         createdAt: serverTimestamp()
       };
 
-      const docRef = await addDoc(collection(db, 'manga', mangaId, 'chapters'), chapterData);
+      const docRef = await addDoc(collection(db, 'manga', selectedMangaId, 'chapters'), chapterData);
       
       // تحديث عدد فصول المانغا
-      await updateDoc(doc(db, 'manga', mangaId), {
+      await updateDoc(doc(db, 'manga', selectedMangaId), {
         chaptersCount: increment(1),
         lastUpdated: serverTimestamp()
       });
@@ -125,7 +161,7 @@ export default function AddChapter() {
       
       // التوجه إلى صفحة تفاصيل المانغا بعد 2 ثانية
       setTimeout(() => {
-        navigate(`/manga/${mangaId}`);
+        navigate(`/manga/${selectedMangaId}`);
       }, 2000);
 
     } catch (error) {
@@ -134,6 +170,17 @@ export default function AddChapter() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (mangaLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <BookOpen className="h-12 w-12 text-blue-600 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-600">جاري تحميل قائمة المانغا...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -164,6 +211,22 @@ export default function AddChapter() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="manga">اختر المانغا *</Label>
+                  <Select value={selectedMangaId} onValueChange={setSelectedMangaId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="اختر المانغا" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mangaList.map((manga) => (
+                        <SelectItem key={manga.id} value={manga.id}>
+                          {manga.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="chapterNumber">رقم الفصل *</Label>
@@ -203,14 +266,14 @@ export default function AddChapter() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => navigate(`/manga/${mangaId}`)}
+                  onClick={() => navigate(selectedMangaId ? `/manga/${selectedMangaId}` : '/admin')}
                   className="w-full"
                 >
                   إلغاء
                 </Button>
                 <Button 
                   type="submit" 
-                  disabled={loading}
+                  disabled={loading || !selectedMangaId}
                   className="w-full"
                 >
                   {loading ? (
@@ -224,6 +287,29 @@ export default function AddChapter() {
                 </Button>
               </CardContent>
             </Card>
+            
+            {selectedMangaId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>المانغا المحددة</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {mangaList.find(m => m.id === selectedMangaId)?.coverImage && (
+                    <img
+                      src={mangaList.find(m => m.id === selectedMangaId).coverImage}
+                      alt="Cover"
+                      className="w-full h-32 object-cover rounded-lg mb-2"
+                    />
+                  )}
+                  <p className="font-semibold">
+                    {mangaList.find(m => m.id === selectedMangaId)?.title}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    الفصول الحالية: {mangaList.find(m => m.id === selectedMangaId)?.chaptersCount || 0}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
 
@@ -232,7 +318,12 @@ export default function AddChapter() {
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span>صفحات الفصل</span>
-              <Button type="button" onClick={addPage} size="sm">
+              <Button 
+                type="button" 
+                onClick={addPage} 
+                size="sm"
+                disabled={!selectedMangaId}
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 إضافة صفحة
               </Button>
@@ -242,7 +333,12 @@ export default function AddChapter() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {pages.length === 0 ? (
+            {!selectedMangaId ? (
+              <div className="text-center py-8">
+                <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">يجب اختيار مانغا أولاً</p>
+              </div>
+            ) : pages.length === 0 ? (
               <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
                 <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600">لم يتم إضافة أي صفحات بعد</p>
