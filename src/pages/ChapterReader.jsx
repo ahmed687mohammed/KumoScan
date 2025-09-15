@@ -17,9 +17,7 @@ import {
   ZoomOut,
   RotateCw,
   Eye,
-  Heart,
-  Maximize,
-  Minimize
+  Heart
 } from 'lucide-react';
 
 export default function ChapterReader() {
@@ -32,18 +30,17 @@ export default function ChapterReader() {
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
-  const [readingMode, setReadingMode] = useState('single');
+  const [readingMode, setReadingMode] = useState('single'); // single, double, scroll
   const [zoom, setZoom] = useState(100);
-  const [showControls, setShowControls] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(true);
   const pageRef = useRef(null);
-  const readerRef = useRef(null);
 
   useEffect(() => {
     loadChapterData();
   }, [mangaId, chapterId]);
 
   useEffect(() => {
+    // إخفاء/إظهار الضوابط عند تحريك الماوس
     let timeout;
     const handleMouseMove = () => {
       setShowControls(true);
@@ -59,6 +56,7 @@ export default function ChapterReader() {
   }, []);
 
   useEffect(() => {
+    // keyboard navigation
     const handleKeyPress = (e) => {
       switch (e.key) {
         case 'ArrowLeft':
@@ -73,51 +71,37 @@ export default function ChapterReader() {
         case 'End':
           setCurrentPage(pages.length - 1);
           break;
-        case 'f':
-        case 'F':
-          toggleFullscreen();
-          break;
-        case 'Escape':
-          if (isFullscreen) {
-            toggleFullscreen();
-          }
-          break;
       }
     };
 
     document.addEventListener('keydown', handleKeyPress);
     return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [pages.length, currentPage, isFullscreen]);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
+  }, [pages.length, currentPage]);
 
   async function loadChapterData() {
     try {
       setLoading(true);
       
+      // جلب معلومات المانغا
       const mangaDoc = await getDoc(doc(db, 'manga', mangaId));
       if (mangaDoc.exists()) {
         setManga({ id: mangaDoc.id, ...mangaDoc.data() });
       }
       
+      // جلب معلومات الفصل
       const chapterDoc = await getDoc(doc(db, 'manga', mangaId, 'chapters', chapterId));
       if (chapterDoc.exists()) {
         const chapterData = { id: chapterDoc.id, ...chapterDoc.data() };
         setChapter(chapterData);
         setPages(chapterData.pages || []);
         
+        // تحديث عدد المشاهدات
         await updateDoc(doc(db, 'manga', mangaId, 'chapters', chapterId), {
           views: increment(1)
         });
       }
       
+      // جلب قائمة الفصول
       const chaptersQuery = query(
         collection(db, 'manga', mangaId, 'chapters'),
         orderBy('chapterNumber', 'asc')
@@ -129,6 +113,7 @@ export default function ChapterReader() {
       }));
       setChapters(chaptersData);
       
+      // تحديث تقدم القراءة للمستخدم المسجل
       if (currentUser) {
         await updateReadingProgress();
       }
@@ -159,6 +144,7 @@ export default function ChapterReader() {
     if (currentPage < pages.length - 1) {
       setCurrentPage(currentPage + 1);
     } else {
+      // الانتقال للفصل التالي
       const currentIndex = chapters.findIndex(ch => ch.id === chapterId);
       if (currentIndex < chapters.length - 1) {
         const nextChapter = chapters[currentIndex + 1];
@@ -171,6 +157,7 @@ export default function ChapterReader() {
     if (currentPage > 0) {
       setCurrentPage(currentPage - 1);
     } else {
+      // الانتقال للفصل السابق
       const currentIndex = chapters.findIndex(ch => ch.id === chapterId);
       if (currentIndex > 0) {
         const prevChapter = chapters[currentIndex - 1];
@@ -185,16 +172,6 @@ export default function ChapterReader() {
 
   function handleChapterChange(newChapterId) {
     navigate(`/manga/${mangaId}/chapter/${newChapterId}`);
-  }
-
-  function toggleFullscreen() {
-    if (!document.fullscreenElement) {
-      readerRef.current?.requestFullscreen?.().catch(err => {
-        console.error('Error attempting to enable fullscreen:', err);
-      });
-    } else {
-      document.exitFullscreen?.();
-    }
   }
 
   if (loading) {
@@ -221,34 +198,56 @@ export default function ChapterReader() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white relative" ref={readerRef}>
-      {/* Floating Controls */}
-      <div className={`fixed top-4 right-4 z-50 flex flex-col gap-2 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={toggleFullscreen}
-          className="bg-black/50 hover:bg-black/70 backdrop-blur-sm"
-        >
-          {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
-        </Button>
-        
-        <Select value={chapterId} onValueChange={handleChapterChange}>
-          <SelectTrigger className="w-48 bg-black/50 border-gray-600 backdrop-blur-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {chapters.map((ch) => (
-              <SelectItem key={ch.id} value={ch.id}>
-                الفصل {ch.chapterNumber}: {ch.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="min-h-screen bg-black text-white relative">
+      {/* Header Controls */}
+      <div className={`fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/">
+                  <Home className="h-4 w-4 mr-2" />
+                  الرئيسية
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to={`/manga/${mangaId}`}>
+                  <BookOpen className="h-4 w-4 mr-2" />
+                  {manga.title}
+                </Link>
+              </Button>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <Select value={chapterId} onValueChange={handleChapterChange}>
+                <SelectTrigger className="w-48 bg-gray-800 border-gray-600">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {chapters.map((ch) => (
+                    <SelectItem key={ch.id} value={ch.id}>
+                      الفصل {ch.chapterNumber}: {ch.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <div className="flex items-center space-x-2">
+                <Button variant="ghost" size="sm" onClick={() => setZoom(Math.max(50, zoom - 25))}>
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="text-sm">{zoom}%</span>
+                <Button variant="ghost" size="sm" onClick={() => setZoom(Math.min(200, zoom + 25))}>
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Content */}
-      <div className="pt-4">
+      <div className="pt-16">
         {pages.length === 0 ? (
           <div className="flex items-center justify-center min-h-screen">
             <div className="text-center">
@@ -259,11 +258,12 @@ export default function ChapterReader() {
         ) : (
           <div className="flex items-center justify-center min-h-screen p-4">
             {readingMode === 'scroll' ? (
+              // Scroll Mode
               <div className="max-w-4xl mx-auto space-y-2">
                 {pages.map((page, index) => (
                   <img
                     key={index}
-                    src={page.imageUrl || page}
+                    src={page.imageUrl}
                     alt={`صفحة ${index + 1}`}
                     className="w-full h-auto"
                     style={{ transform: `scale(${zoom / 100})` }}
@@ -271,20 +271,22 @@ export default function ChapterReader() {
                 ))}
               </div>
             ) : (
+              // Single/Double Page Mode
               <div className="relative">
                 <img
                   ref={pageRef}
-                  src={pages[currentPage]?.imageUrl || pages[currentPage]}
+                  src={pages[currentPage]?.imageUrl}
                   alt={`صفحة ${currentPage + 1}`}
-                  className="max-w-full max-h-screen object-contain cursor-pointer"
+                  className="max-w-full max-h-screen object-contain"
                   style={{ transform: `scale(${zoom / 100})` }}
                   onClick={nextPage}
                 />
                 
+                {/* Navigation Arrows */}
                 <Button
-                  variant="secondary"
-                  size="icon"
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 backdrop-blur-sm"
+                  variant="ghost"
+                  size="lg"
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70"
                   onClick={previousPage}
                   disabled={currentPage === 0 && getCurrentChapterIndex() === 0}
                 >
@@ -292,9 +294,9 @@ export default function ChapterReader() {
                 </Button>
                 
                 <Button
-                  variant="secondary"
-                  size="icon"
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 backdrop-blur-sm"
+                  variant="ghost"
+                  size="lg"
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70"
                   onClick={nextPage}
                   disabled={currentPage === pages.length - 1 && getCurrentChapterIndex() === chapters.length - 1}
                 >
@@ -306,66 +308,62 @@ export default function ChapterReader() {
         )}
       </div>
 
-      {/* Bottom Progress Bar */}
-      <div className={`fixed bottom-0 left-0 right-0 z-50 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Bottom Controls */}
+      <div className={`fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
         <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
-              صفحة {currentPage + 1} من {pages.length}
-            </span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <span className="text-sm">
+                صفحة {currentPage + 1} من {pages.length}
+              </span>
+              <div className="flex items-center space-x-2">
+                <Eye className="h-4 w-4" />
+                <span className="text-sm">{chapter.views || 0}</span>
+              </div>
+            </div>
             
             <div className="flex items-center space-x-2">
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
                 onClick={() => setReadingMode(readingMode === 'single' ? 'scroll' : 'single')}
-                className="bg-black/50 backdrop-blur-sm"
               >
                 <Settings className="h-4 w-4 mr-2" />
                 {readingMode === 'single' ? 'وضع التمرير' : 'وضع الصفحة'}
               </Button>
+              
+              {getCurrentChapterIndex() > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => {
+                  const prevChapter = chapters[getCurrentChapterIndex() - 1];
+                  handleChapterChange(prevChapter.id);
+                }}>
+                  <ChevronLeft className="h-4 w-4 mr-2" />
+                  الفصل السابق
+                </Button>
+              )}
+              
+              {getCurrentChapterIndex() < chapters.length - 1 && (
+                <Button variant="ghost" size="sm" onClick={() => {
+                  const nextChapter = chapters[getCurrentChapterIndex() + 1];
+                  handleChapterChange(nextChapter.id);
+                }}>
+                  الفصل التالي
+                  <ChevronRight className="h-4 w-4 ml-2" />
+                </Button>
+              )}
             </div>
           </div>
           
-          <div className="w-full bg-gray-700 rounded-full h-2">
+          {/* Progress Bar */}
+          <div className="w-full bg-gray-700 rounded-full h-1 mt-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className="bg-blue-600 h-1 rounded-full transition-all duration-300"
               style={{ width: `${((currentPage + 1) / pages.length) * 100}%` }}
             />
           </div>
         </div>
       </div>
-
-      {/* Navigation between chapters (floating at bottom corners) */}
-      <div className={`fixed bottom-4 left-4 right-4 z-50 flex justify-between transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        {getCurrentChapterIndex() > 0 && (
-          <Button
-            variant="secondary"
-            onClick={() => {
-              const prevChapter = chapters[getCurrentChapterIndex() - 1];
-              handleChapterChange(prevChapter.id);
-            }}
-            className="bg-black/50 backdrop-blur-sm"
-          >
-            <ChevronLeft className="h-4 w-4 mr-2" />
-            الفصل السابق
-          </Button>
-        )}
-        
-        {getCurrentChapterIndex() < chapters.length - 1 && (
-          <Button
-            variant="secondary"
-            onClick={() => {
-              const nextChapter = chapters[getCurrentChapterIndex() + 1];
-              handleChapterChange(nextChapter.id);
-            }}
-            className="bg-black/50 backdrop-blur-sm ml-auto"
-          >
-            الفصل التالي
-            <ChevronRight className="h-4 w-4 ml-2" />
-          </Button>
-        )}
-      </div>
     </div>
   );
 }
+
