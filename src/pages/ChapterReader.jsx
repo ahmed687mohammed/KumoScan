@@ -93,6 +93,8 @@ export default function ChapterReader() {
       if (chapterDoc.exists()) {
         const chapterData = { id: chapterDoc.id, ...chapterDoc.data() };
         setChapter(chapterData);
+        
+        // تعديل هنا: استخدام pages مباشرة من بيانات الفصل
         setPages(chapterData.pages || []);
         
         // تحديث عدد المشاهدات
@@ -263,7 +265,7 @@ export default function ChapterReader() {
                 {pages.map((page, index) => (
                   <img
                     key={index}
-                    src={page.imageUrl}
+                    src={page.imageUrl || page} // تعديل هنا: دعم كلا النوعين من التخزين
                     alt={`صفحة ${index + 1}`}
                     className="w-full h-auto"
                     style={{ transform: `scale(${zoom / 100})` }}
@@ -275,7 +277,7 @@ export default function ChapterReader() {
               <div className="relative">
                 <img
                   ref={pageRef}
-                  src={pages[currentPage]?.imageUrl}
+                  src={pages[currentPage]?.imageUrl || pages[currentPage]} // تعديل هنا: دعم كلا النوعين من التخزين
                   alt={`صفحة ${currentPage + 1}`}
                   className="max-w-full max-h-screen object-contain"
                   style={{ transform: `scale(${zoom / 100})` }}
@@ -366,4 +368,3 @@ export default function ChapterReader() {
     </div>
   );
 }
-
