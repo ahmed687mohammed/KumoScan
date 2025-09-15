@@ -19,7 +19,7 @@ export default function Home() {
 
   async function loadHomeData() {
     try {
-      // جلب أحدث المانغا
+      // جلب أحدث المانغا - بدون شرط المصادقة
       const latestQuery = query(
         collection(db, 'manga'),
         orderBy('createdAt', 'desc'),
@@ -28,11 +28,17 @@ export default function Home() {
       const latestSnapshot = await getDocs(latestQuery);
       const latest = latestSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        // التأكد من أن عنوان الصورة مطلق
+        coverImage: doc.data().coverImage ? 
+          doc.data().coverImage.startsWith('http') ? 
+            doc.data().coverImage : 
+            `${window.location.origin}${doc.data().coverImage}`
+          : '/placeholder-manga.jpg'
       }));
       setLatestManga(latest);
 
-      // جلب المانغا الأكثر شعبية
+      // جلب المانغا الأكثر شعبية - بدون شرط المصادقة
       const popularQuery = query(
         collection(db, 'manga'),
         orderBy('views', 'desc'),
@@ -41,11 +47,16 @@ export default function Home() {
       const popularSnapshot = await getDocs(popularQuery);
       const popular = popularSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        coverImage: doc.data().coverImage ? 
+          doc.data().coverImage.startsWith('http') ? 
+            doc.data().coverImage : 
+            `${window.location.origin}${doc.data().coverImage}`
+          : '/placeholder-manga.jpg'
       }));
       setPopularManga(popular);
 
-      // جلب المانغا المميزة
+      // جلب المانغا المميزة - بدون شرط المصادقة
       const featuredQuery = query(
         collection(db, 'manga'),
         where('featured', '==', true),
@@ -53,13 +64,18 @@ export default function Home() {
       );
       const featuredSnapshot = await getDocs(featuredQuery);
       if (!featuredSnapshot.empty) {
+        const featuredDoc = featuredSnapshot.docs[0];
         const featured = {
-          id: featuredSnapshot.docs[0].id,
-          ...featuredSnapshot.docs[0].data()
+          id: featuredDoc.id,
+          ...featuredDoc.data(),
+          coverImage: featuredDoc.data().coverImage ? 
+            featuredDoc.data().coverImage.startsWith('http') ? 
+              featuredDoc.data().coverImage : 
+              `${window.location.origin}${featuredDoc.data().coverImage}`
+            : '/placeholder-manga.jpg'
         };
         setFeaturedManga(featured);
       } else if (latest.length > 0) {
-        // إذا لم توجد مانغا مميزة، استخدم أحدث مانغا
         setFeaturedManga(latest[0]);
       }
 
@@ -76,9 +92,12 @@ export default function Home() {
         <Link to={`/manga/${manga.id}`}>
           <div className="relative">
             <img
-              src={manga.coverImage || '/placeholder-manga.jpg'}
+              src={manga.coverImage}
               alt={manga.title}
               className="w-full h-64 object-cover rounded-t-lg group-hover:scale-105 transition-transform duration-300"
+              onError={(e) => {
+                e.target.src = '/placeholder-manga.jpg'; // صورة بديلة في حالة الخطأ
+              }}
             />
             {showBadge && badgeText && (
               <Badge className="absolute top-2 right-2 bg-blue-600">
@@ -128,9 +147,12 @@ export default function Home() {
         <section className="relative h-96 bg-gradient-to-r from-blue-600 to-purple-600 overflow-hidden">
           <div className="absolute inset-0">
             <img
-              src={featuredManga.coverImage || '/placeholder-manga.jpg'}
+              src={featuredManga.coverImage}
               alt={featuredManga.title}
               className="w-full h-full object-cover opacity-20"
+              onError={(e) => {
+                e.target.src = '/placeholder-manga.jpg';
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-blue-600/80 to-purple-600/80" />
           </div>
@@ -257,4 +279,3 @@ export default function Home() {
     </div>
   );
 }
-
