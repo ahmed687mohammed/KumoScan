@@ -1,370 +1,409 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { doc, getDoc, collection, query, orderBy, getDocs, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { useAuth } from '../contexts/AuthContext';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  BookOpen, 
-  Home, 
-  Settings,
-  ZoomIn,
-  ZoomOut,
-  RotateCw,
-  Eye,
-  Heart
-} from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { collection, addDoc, serverTimestamp, updateDoc, increment, getDocs } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
+import { Upload, BookOpen, Save, X, Plus, Trash2 } from 'lucide-react';
 
-export default function ChapterReader() {
-  const { mangaId, chapterId } = useParams();
+export default function AddChapter() {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
-  const [manga, setManga] = useState(null);
-  const [chapter, setChapter] = useState(null);
-  const [chapters, setChapters] = useState([]);
+  const { id: mangaIdFromParams } = useParams();
+  const [mangaList, setMangaList] = useState([]);
+  const [selectedMangaId, setSelectedMangaId] = useState(mangaIdFromParams || '');
+  const [formData, setFormData] = useState({
+    chapterNumber: '',
+    title: '',
+  });
   const [pages, setPages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [readingMode, setReadingMode] = useState('single'); // single, double, scroll
-  const [zoom, setZoom] = useState(100);
-  const [showControls, setShowControls] = useState(true);
-  const pageRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const [mangaLoading, setMangaLoading] = useState(true);
+  const [message, setMessage] = useState('');
 
+  // جلب قائمة المانغا من Firebase
   useEffect(() => {
-    loadChapterData();
-  }, [mangaId, chapterId]);
-
-  useEffect(() => {
-    // إخفاء/إظهار الضوابط عند تحريك الماوس
-    let timeout;
-    const handleMouseMove = () => {
-      setShowControls(true);
-      clearTimeout(timeout);
-      timeout = setTimeout(() => setShowControls(false), 3000);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      clearTimeout(timeout);
-    };
-  }, []);
-
-  useEffect(() => {
-    // keyboard navigation
-    const handleKeyPress = (e) => {
-      switch (e.key) {
-        case 'ArrowLeft':
-          previousPage();
-          break;
-        case 'ArrowRight':
-          nextPage();
-          break;
-        case 'Home':
-          setCurrentPage(0);
-          break;
-        case 'End':
-          setCurrentPage(pages.length - 1);
-          break;
+    async function fetchMangaList() {
+      try {
+        setMangaLoading(true);
+        const mangaSnapshot = await getDocs(collection(db, 'manga'));
+        const mangaData = mangaSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setMangaList(mangaData);
+        
+        // إذا كان هناك mangaId في params، تأكد من أنه موجود في القائمة
+        if (mangaIdFromParams && mangaData.some(manga => manga.id === mangaIdFromParams)) {
+          setSelectedMangaId(mangaIdFromParams);
+        }
+      } catch (error) {
+        console.error('خطأ في جلب قائمة المانغا:', error);
+        setMessage('حدث خطأ في جلب قائمة المانغا');
+      } finally {
+        setMangaLoading(false);
       }
-    };
+    }
 
-    document.addEventListener('keydown', handleKeyPress);
-    return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [pages.length, currentPage]);
+    fetchMangaList();
+  }, [mangaIdFromParams]);
 
-  async function loadChapterData() {
+  function handleInputChange(e) {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  }
+
+  function handleImageChange(e, index) {
+    const file = e.target.files[0];
+    if (file) {
+      const newPages = [...pages];
+      newPages[index] = { file, preview: URL.createObjectURL(file) };
+      setPages(newPages);
+    }
+  }
+
+  function addPage() {
+    setPages([...pages, null]);
+  }
+
+  function removePage(index) {
+    const newPages = [...pages];
+    newPages.splice(index, 1);
+    setPages(newPages);
+  }
+
+  async function uploadPageImage(pageFile) {
+    try {
+      const formData = new FormData();
+      formData.append('image', pageFile);
+      
+      const response = await fetch('https://api.imgbb.com/1/upload?key=58c8ffbe992840b5b93b5bd1c54b6bdc', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        return data.data.url;
+      } else {
+        throw new Error('فشل في رفع الصورة إلى ImgBB');
+      }
+    } catch (error) {
+      console.error('خطأ في رفع الصورة:', error);
+      throw error;
+    }
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    
+    if (!selectedMangaId) {
+      setMessage('يجب اختيار مانغا');
+      return;
+    }
+
+    if (!formData.chapterNumber.trim()) {
+      setMessage('رقم الفصل مطلوب');
+      return;
+    }
+
+    if (pages.length === 0) {
+      setMessage('يجب إضافة صفحة واحدة على الأقل');
+      return;
+    }
+
     try {
       setLoading(true);
-      
-      // جلب معلومات المانغا
-      const mangaDoc = await getDoc(doc(db, 'manga', mangaId));
-      if (mangaDoc.exists()) {
-        setManga({ id: mangaDoc.id, ...mangaDoc.data() });
+      setMessage('');
+
+      // رفع جميع صور الصفحات إلى ImgBB
+      const pageUrls = [];
+      for (const page of pages) {
+        if (page && page.file) {
+          const pageUrl = await uploadPageImage(page.file);
+          pageUrls.push(pageUrl);
+        }
       }
+
+      // إضافة الفصل إلى Firestore
+      const chapterData = {
+        ...formData,
+        chapterNumber: parseInt(formData.chapterNumber),
+        pages: pageUrls,
+        views: 0,
+        publishedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      };
+
+      const docRef = await addDoc(collection(db, 'manga', selectedMangaId, 'chapters'), chapterData);
       
-      // جلب معلومات الفصل
-      const chapterDoc = await getDoc(doc(db, 'manga', mangaId, 'chapters', chapterId));
-      if (chapterDoc.exists()) {
-        const chapterData = { id: chapterDoc.id, ...chapterDoc.data() };
-        setChapter(chapterData);
-        
-        // تعديل هنا: استخدام pages مباشرة من بيانات الفصل
-        setPages(chapterData.pages || []);
-        
-        // تحديث عدد المشاهدات
-        await updateDoc(doc(db, 'manga', mangaId, 'chapters', chapterId), {
-          views: increment(1)
-        });
-      }
+      // تحديث عدد فصول المانغا
+      await updateDoc(doc(db, 'manga', selectedMangaId), {
+        chaptersCount: increment(1),
+        lastUpdated: serverTimestamp()
+      });
+
+      setMessage('تم إضافة الفصل بنجاح!');
       
-      // جلب قائمة الفصول
-      const chaptersQuery = query(
-        collection(db, 'manga', mangaId, 'chapters'),
-        orderBy('chapterNumber', 'asc')
-      );
-      const chaptersSnapshot = await getDocs(chaptersQuery);
-      const chaptersData = chaptersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setChapters(chaptersData);
+      // إعادة تعيين النموذج
+      setFormData({
+        chapterNumber: '',
+        title: '',
+      });
+      setPages([]);
       
-      // تحديث تقدم القراءة للمستخدم المسجل
-      if (currentUser) {
-        await updateReadingProgress();
-      }
-      
+      // التوجه إلى صفحة تفاصيل المانغا بعد 2 ثانية
+      setTimeout(() => {
+        navigate(`/manga/${selectedMangaId}`);
+      }, 2000);
+
     } catch (error) {
-      console.error('خطأ في جلب بيانات الفصل:', error);
+      console.error('خطأ في إضافة الفصل:', error);
+      setMessage('حدث خطأ في إضافة الفصل. حاول مرة أخرى.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function updateReadingProgress() {
-    try {
-      const userRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(userRef, {
-        [`readingProgress.${mangaId}`]: {
-          lastChapter: chapter?.chapterNumber,
-          lastRead: new Date(),
-          mangaTitle: manga?.title
-        }
-      });
-    } catch (error) {
-      console.error('خطأ في تحديث تقدم القراءة:', error);
-    }
-  }
-
-  function nextPage() {
-    if (currentPage < pages.length - 1) {
-      setCurrentPage(currentPage + 1);
-    } else {
-      // الانتقال للفصل التالي
-      const currentIndex = chapters.findIndex(ch => ch.id === chapterId);
-      if (currentIndex < chapters.length - 1) {
-        const nextChapter = chapters[currentIndex + 1];
-        navigate(`/manga/${mangaId}/chapter/${nextChapter.id}`);
-      }
-    }
-  }
-
-  function previousPage() {
-    if (currentPage > 0) {
-      setCurrentPage(currentPage - 1);
-    } else {
-      // الانتقال للفصل السابق
-      const currentIndex = chapters.findIndex(ch => ch.id === chapterId);
-      if (currentIndex > 0) {
-        const prevChapter = chapters[currentIndex - 1];
-        navigate(`/manga/${mangaId}/chapter/${prevChapter.id}`);
-      }
-    }
-  }
-
-  function getCurrentChapterIndex() {
-    return chapters.findIndex(ch => ch.id === chapterId);
-  }
-
-  function handleChapterChange(newChapterId) {
-    navigate(`/manga/${mangaId}/chapter/${newChapterId}`);
-  }
-
-  if (loading) {
+  if (mangaLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black">
-        <div className="text-center text-white">
-          <BookOpen className="h-12 w-12 mx-auto mb-4 animate-pulse" />
-          <p>جاري تحميل الفصل...</p>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <BookOpen className="h-12 w-12 text-blue-600 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-600">جاري تحميل قائمة المانغا...</p>
         </div>
-      </div>
-    );
-  }
-
-  if (!chapter || !manga) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <Alert>
-          <AlertDescription>
-            لم يتم العثور على الفصل المطلوب.
-          </AlertDescription>
-        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white relative">
-      {/* Header Controls */}
-      <div className={`fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/">
-                  <Home className="h-4 w-4 mr-2" />
-                  الرئيسية
-                </Link>
-              </Button>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to={`/manga/${mangaId}`}>
-                  <BookOpen className="h-4 w-4 mr-2" />
-                  {manga.title}
-                </Link>
-              </Button>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <Select value={chapterId} onValueChange={handleChapterChange}>
-                <SelectTrigger className="w-48 bg-gray-800 border-gray-600">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {chapters.map((ch) => (
-                    <SelectItem key={ch.id} value={ch.id}>
-                      الفصل {ch.chapterNumber}: {ch.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <div className="flex items-center space-x-2">
-                <Button variant="ghost" size="sm" onClick={() => setZoom(Math.max(50, zoom - 25))}>
-                  <ZoomOut className="h-4 w-4" />
-                </Button>
-                <span className="text-sm">{zoom}%</span>
-                <Button variant="ghost" size="sm" onClick={() => setZoom(Math.min(200, zoom + 25))}>
-                  <ZoomIn className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">إضافة فصل جديد</h1>
+        <p className="text-gray-600 mt-2">أضف فصل جديد إلى المانغا</p>
       </div>
 
-      {/* Main Content */}
-      <div className="pt-16">
-        {pages.length === 0 ? (
-          <div className="flex items-center justify-center min-h-screen">
-            <div className="text-center">
-              <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-400">لا توجد صفحات متاحة لهذا الفصل</p>
-            </div>
+      {message && (
+        <Alert className={message.includes('بنجاح') ? 'border-green-500' : 'border-red-500'}>
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
+      )}
+
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Information */}
+          <div className="lg:col-span-2 space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <BookOpen className="h-5 w-5" />
+                  <span>معلومات الفصل</span>
+                </CardTitle>
+                <CardDescription>
+                  أدخل المعلومات الأساسية للفصل
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="manga">اختر المانغا *</Label>
+                  <Select value={selectedMangaId} onValueChange={setSelectedMangaId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="اختر المانغا" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mangaList.map((manga) => (
+                        <SelectItem key={manga.id} value={manga.id}>
+                          {manga.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="chapterNumber">رقم الفصل *</Label>
+                    <Input
+                      id="chapterNumber"
+                      name="chapterNumber"
+                      type="number"
+                      value={formData.chapterNumber}
+                      onChange={handleInputChange}
+                      placeholder="أدخل رقم الفصل"
+                      min="1"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="title">عنوان الفصل (اختياري)</Label>
+                    <Input
+                      id="title"
+                      name="title"
+                      value={formData.title}
+                      onChange={handleInputChange}
+                      placeholder="عنوان الفصل"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        ) : (
-          <div className="flex items-center justify-center min-h-screen p-4">
-            {readingMode === 'scroll' ? (
-              // Scroll Mode
-              <div className="max-w-4xl mx-auto space-y-2">
-                {pages.map((page, index) => (
-                  <img
-                    key={index}
-                    src={page.imageUrl || page} // تعديل هنا: دعم كلا النوعين من التخزين
-                    alt={`صفحة ${index + 1}`}
-                    className="w-full h-auto"
-                    style={{ transform: `scale(${zoom / 100})` }}
-                  />
-                ))}
-              </div>
-            ) : (
-              // Single/Double Page Mode
-              <div className="relative">
-                <img
-                  ref={pageRef}
-                  src={pages[currentPage]?.imageUrl || pages[currentPage]} // تعديل هنا: دعم كلا النوعين من التخزين
-                  alt={`صفحة ${currentPage + 1}`}
-                  className="max-w-full max-h-screen object-contain"
-                  style={{ transform: `scale(${zoom / 100})` }}
-                  onClick={nextPage}
-                />
-                
-                {/* Navigation Arrows */}
+
+          {/* Action Buttons */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>إجراءات</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <Button
-                  variant="ghost"
-                  size="lg"
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70"
-                  onClick={previousPage}
-                  disabled={currentPage === 0 && getCurrentChapterIndex() === 0}
+                  type="button"
+                  variant="outline"
+                  onClick={() => navigate(selectedMangaId ? `/manga/${selectedMangaId}` : '/admin')}
+                  className="w-full"
                 >
-                  <ChevronLeft className="h-8 w-8" />
+                  إلغاء
                 </Button>
-                
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70"
-                  onClick={nextPage}
-                  disabled={currentPage === pages.length - 1 && getCurrentChapterIndex() === chapters.length - 1}
+                <Button 
+                  type="submit" 
+                  disabled={loading || !selectedMangaId}
+                  className="w-full"
                 >
-                  <ChevronRight className="h-8 w-8" />
+                  {loading ? (
+                    <>جاري الحفظ...</>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      حفظ الفصل
+                    </>
+                  )}
                 </Button>
-              </div>
+              </CardContent>
+            </Card>
+            
+            {selectedMangaId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>المانغا المحددة</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {mangaList.find(m => m.id === selectedMangaId)?.coverImage && (
+                    <img
+                      src={mangaList.find(m => m.id === selectedMangaId).coverImage}
+                      alt="Cover"
+                      className="w-full h-32 object-cover rounded-lg mb-2"
+                    />
+                  )}
+                  <p className="font-semibold">
+                    {mangaList.find(m => m.id === selectedMangaId)?.title}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    الفصول الحالية: {mangaList.find(m => m.id === selectedMangaId)?.chaptersCount || 0}
+                  </p>
+                </CardContent>
+              </Card>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Bottom Controls */}
-      <div className={`fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <span className="text-sm">
-                صفحة {currentPage + 1} من {pages.length}
-              </span>
-              <div className="flex items-center space-x-2">
-                <Eye className="h-4 w-4" />
-                <span className="text-sm">{chapter.views || 0}</span>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setReadingMode(readingMode === 'single' ? 'scroll' : 'single')}
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                {readingMode === 'single' ? 'وضع التمرير' : 'وضع الصفحة'}
-              </Button>
-              
-              {getCurrentChapterIndex() > 0 && (
-                <Button variant="ghost" size="sm" onClick={() => {
-                  const prevChapter = chapters[getCurrentChapterIndex() - 1];
-                  handleChapterChange(prevChapter.id);
-                }}>
-                  <ChevronLeft className="h-4 w-4 mr-2" />
-                  الفصل السابق
-                </Button>
-              )}
-              
-              {getCurrentChapterIndex() < chapters.length - 1 && (
-                <Button variant="ghost" size="sm" onClick={() => {
-                  const nextChapter = chapters[getCurrentChapterIndex() + 1];
-                  handleChapterChange(nextChapter.id);
-                }}>
-                  الفصل التالي
-                  <ChevronRight className="h-4 w-4 ml-2" />
-                </Button>
-              )}
-            </div>
-          </div>
-          
-          {/* Progress Bar */}
-          <div className="w-full bg-gray-700 rounded-full h-1 mt-2">
-            <div
-              className="bg-blue-600 h-1 rounded-full transition-all duration-300"
-              style={{ width: `${((currentPage + 1) / pages.length) * 100}%` }}
-            />
-          </div>
         </div>
-      </div>
+
+        {/* Pages Section */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>صفحات الفصل</span>
+              <Button 
+                type="button" 
+                onClick={addPage} 
+                size="sm"
+                disabled={!selectedMangaId}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                إضافة صفحة
+              </Button>
+            </CardTitle>
+            <CardDescription>
+              ارفع صفحات الفصل بالترتيب الصحيح
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!selectedMangaId ? (
+              <div className="text-center py-8">
+                <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">يجب اختيار مانغا أولاً</p>
+              </div>
+            ) : pages.length === 0 ? (
+              <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
+                <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">لم يتم إضافة أي صفحات بعد</p>
+                <Button 
+                  type="button" 
+                  onClick={addPage} 
+                  variant="outline" 
+                  className="mt-4"
+                >
+                  إضافة أول صفحة
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {pages.map((page, index) => (
+                  <div key={index} className="border rounded-lg p-4 relative">
+                    <div className="flex justify-between items-center mb-2">
+                      <Label>الصفحة {index + 1}</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removePage(index)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                    
+                    {page ? (
+                      <div className="space-y-2">
+                        <img
+                          src={page.preview}
+                          alt={`معاينة الصفحة ${index + 1}`}
+                          className="w-full h-48 object-contain rounded-lg mx-auto border"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => document.getElementById(`page-${index}`).click()}
+                        >
+                          تغيير الصورة
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                        <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-sm text-gray-600">اختر صورة الصفحة</p>
+                        <Input
+                          id={`page-${index}`}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageChange(e, index)}
+                          className="max-w-xs mx-auto mt-2"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </form>
     </div>
   );
 }
