@@ -70,67 +70,45 @@ export default function Home() {
     }
   }
 
-  const MangaCard = ({ manga, showBadge = false, badgeText = '' }) => {
-    // معالجة رابط الصورة للتأكد من أنه يعمل بشكل صحيح
-    const getImageUrl = (url) => {
-      if (!url) return '/placeholder-manga.jpg';
-      
-      // إذا كان الرابط من imgbb، تأكد من أنه يحتوي على النطاق الصحيح
-      if (url.includes('i.ibb.co') || url.includes('imgbb.com')) {
-        return url;
-      }
-      
-      // إذا كان الرابط يحتوي على مسار نسبي، قم بتحويله إلى رابط مطلق
-      if (url.startsWith('/')) {
-        return `${window.location.origin}${url}`;
-      }
-      
-      return url || '/placeholder-manga.jpg';
-    };
-
-    return (
-      <Card className="group hover:shadow-lg transition-shadow duration-300">
-        <CardContent className="p-0">
-          <Link to={`/manga/${manga.id}`}>
-            <div className="relative">
-              <img
-                src={getImageUrl(manga.coverImage)}
-                alt={manga.title}
-                className="w-full h-64 object-cover rounded-t-lg group-hover:scale-105 transition-transform duration-300"
-                onError={(e) => {
-                  e.target.src = '/placeholder-manga.jpg';
-                }}
-              />
-              {showBadge && badgeText && (
-                <Badge className="absolute top-2 right-2 bg-blue-600">
-                  {badgeText}
-                </Badge>
-              )}
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity duration-300 rounded-t-lg" />
-            </div>
-            <div className="p-4">
-              <h3 className="font-semibold text-lg mb-2 group-hover:text-blue-600 transition-colors line-clamp-1">
-                {manga.title}
-              </h3>
-              <p className="text-gray-600 text-sm mb-3 line-clamp-2">
-                {manga.description || 'لا يوجد وصف متاح'}
-              </p>
-              <div className="flex items-center justify-between text-sm text-gray-500">
-                <div className="flex items-center space-x-2">
-                  <BookOpen className="h-4 w-4" />
-                  <span>{manga.chaptersCount || 0} فصل</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Star className="h-4 w-4 text-yellow-500" />
-                  <span>{manga.rating || '0.0'}</span>
-                </div>
+  const MangaCard = ({ manga, showBadge = false, badgeText = '' }) => (
+    <Card className="group hover:shadow-lg transition-shadow duration-300">
+      <CardContent className="p-0">
+        <Link to={`/manga/${manga.id}`}>
+          <div className="relative">
+            <img
+              src={manga.coverImage || '/placeholder-manga.jpg'}
+              alt={manga.title}
+              className="w-full h-64 object-cover rounded-t-lg group-hover:scale-105 transition-transform duration-300"
+            />
+            {showBadge && badgeText && (
+              <Badge className="absolute top-2 right-2 bg-blue-600">
+                {badgeText}
+              </Badge>
+            )}
+            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity duration-300 rounded-t-lg" />
+          </div>
+          <div className="p-4">
+            <h3 className="font-semibold text-lg mb-2 group-hover:text-blue-600 transition-colors line-clamp-1">
+              {manga.title}
+            </h3>
+            <p className="text-gray-600 text-sm mb-3 line-clamp-2">
+              {manga.description || 'لا يوجد وصف متاح'}
+            </p>
+            <div className="flex items-center justify-between text-sm text-gray-500">
+              <div className="flex items-center space-x-2">
+                <BookOpen className="h-4 w-4" />
+                <span>{manga.chaptersCount || 0} فصل</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Star className="h-4 w-4 text-yellow-500" />
+                <span>{manga.rating || '0.0'}</span>
               </div>
             </div>
-          </Link>
-        </CardContent>
-      </Card>
-    );
-  };
+          </div>
+        </Link>
+      </CardContent>
+    </Card>
+  );
 
   if (loading) {
     return (
@@ -153,9 +131,6 @@ export default function Home() {
               src={featuredManga.coverImage || '/placeholder-manga.jpg'}
               alt={featuredManga.title}
               className="w-full h-full object-cover opacity-20"
-              onError={(e) => {
-                e.target.src = '/placeholder-manga.jpg';
-              }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-blue-600/80 to-purple-600/80" />
           </div>
@@ -282,3 +257,4 @@ export default function Home() {
     </div>
   );
 }
+
