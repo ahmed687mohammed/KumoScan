@@ -1,347 +1,468 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { doc, getDoc, collection, query, orderBy, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { collection, query, orderBy, limit, getDocs, where, startAfter, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import Comments from '../components/Comments';
-import Rating from '../components/Rating';
-import FavoriteButton from '../components/FavoriteButton';
-import { 
-  BookOpen, 
-  Heart, 
-  Star, 
-  Calendar, 
-  User, 
-  Eye, 
-  MessageCircle,
-  Play,
-  Clock,
-  Tag
-} from 'lucide-react';
+import { Search, Filter, BookOpen, Star, Clock, TrendingUp, Heart, Image as ImageIcon, Calendar, Eye } from 'lucide-react';
 
-export default function MangaDetail() {
-  const { id } = useParams();
-  const { currentUser, userProfile } = useAuth();
-  const [manga, setManga] = useState(null);
-  const [chapters, setChapters] = useState([]);
+export default function MangaList({ filter = 'all' }) {
+  const [manga, setManga] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('latest');
+  const [selectedGenre, setSelectedGenre] = useState('all');
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
+  
+  const [searchParams] = useSearchParams();
+  const { userProfile } = useAuth();
+
+  const genres = [
+    { value: 'all', label: 'جميع التصنيفات' },
+    { value: 'action', label: 'أكشن' },
+    { value: 'romance', label: 'رومانسي' },
+    { value: 'comedy', label: 'كوميدي' },
+    { value: 'drama', label: 'دراما' },
+    { value: 'fantasy', label: 'خيال' },
+    { value: 'horror', label: 'رعب' },
+    { value: 'mystery', label: 'غموض' },
+    { value: 'slice-of-life', label: 'شريحة من الحياة' }
+  ];
+
+  const sortOptions = [
+    { value: 'latest', label: 'الأحدث' },
+    { value: 'popular', label: 'الأكثر شعبية' },
+    { value: 'rating', label: 'الأعلى تقييماً' },
+    { value: 'title', label: 'الاسم (أ-ي)' },
+    { value: 'chapters', label: 'عدد الفصول' }
+  ];
 
   useEffect(() => {
-    loadMangaDetails();
-  }, [id]);
+    loadManga(true);
+  }, [filter, sortBy, selectedGenre]);
 
   useEffect(() => {
-    if (userProfile && manga) {
-      setIsFavorite(userProfile.favorites?.includes(manga.id) || false);
+    const search = searchParams.get('search');
+    if (search) {
+      setSearchTerm(search);
     }
-  }, [userProfile, manga]);
+  }, [searchParams]);
 
-  async function loadMangaDetails() {
+  // دالة جديدة لجلب عدد فصول المانغا
+  async function getChaptersCount(mangaId) {
+    try {
+      const chaptersRef = collection(db, 'manga', mangaId, 'chapters');
+      const chaptersQuery = query(chaptersRef);
+      const chaptersSnapshot = await getDocs(chaptersQuery);
+      return chaptersSnapshot.size;
+    } catch (error) {
+      console.error('خطأ في جلب عدد الفصول:', error);
+      return 0;
+    }
+  }
+
+  async function loadManga(reset = false) {
     try {
       setLoading(true);
       
-      // جلب تفاصيل المانغا
-      const mangaDoc = await getDoc(doc(db, 'manga', id));
-      if (mangaDoc.exists()) {
-        const mangaData = { id: mangaDoc.id, ...mangaDoc.data() };
-        setManga(mangaData);
+      let mangaQuery;
+      const mangaRef = collection(db, 'manga');
+      
+      // بناء الاستعلام حسب الفلتر
+      if (filter === 'favorites' && userProfile?.favorites) {
+        if (userProfile.favorites.length === 0) {
+          setManga([]);
+          setLoading(false);
+          return;
+        }
+        mangaQuery = query(
+          mangaRef,
+          where('__name__', 'in', userProfile.favorites),
+          limit(12)
+        );
+      } else if (filter === 'latest') {
+        mangaQuery = query(
+          mangaRef,
+          orderBy('createdAt', 'desc'),
+          limit(12)
+        );
+      } else if (filter === 'popular') {
+        mangaQuery = query(
+          mangaRef,
+          orderBy('views', 'desc'),
+          limit(12)
+        );
+      } else {
+        // فلتر عام
+        let orderField = 'createdAt';
+        let orderDirection = 'desc';
         
-        // تحديث عدد المشاهدات
-        await updateDoc(doc(db, 'manga', id), {
-          views: (mangaData.views || 0) + 1
-        });
+        switch (sortBy) {
+          case 'popular':
+            orderField = 'views';
+            break;
+          case 'rating':
+            orderField = 'rating';
+            break;
+          case 'title':
+            orderField = 'title';
+            orderDirection = 'asc';
+            break;
+          case 'chapters':
+            orderField = 'chaptersCount';
+            break;
+          default:
+            orderField = 'createdAt';
+            orderDirection = 'desc';
+        }
+        
+        mangaQuery = query(
+          mangaRef,
+          orderBy(orderField, orderDirection),
+          limit(12)
+        );
+        
+        // إضافة فلتر النوع إذا تم اختياره
+        if (selectedGenre !== 'all') {
+          mangaQuery = query(
+            mangaRef,
+            where('genres', 'array-contains', selectedGenre),
+            orderBy(orderField, orderDirection),
+            limit(12)
+          );
+        }
       }
       
-      // جلب الفصول
-      const chaptersQuery = query(
-        collection(db, 'manga', id, 'chapters'),
-        orderBy('chapterNumber', 'asc')
+      // إضافة pagination إذا لم يكن reset
+      if (!reset && lastDoc) {
+        mangaQuery = query(mangaQuery, startAfter(lastDoc));
+      }
+      
+      const snapshot = await getDocs(mangaQuery);
+      
+      // جلب البيانات مع عدد الفصول الحقيقي
+      const mangaData = await Promise.all(
+        snapshot.docs.map(async (doc) => {
+          const data = { id: doc.id, ...doc.data() };
+          
+          // إذا لم يكن هناك chaptersCount أو نريد التأكد من العدد الحقيقي
+          if (!data.chaptersCount || sortBy === 'chapters') {
+            data.chaptersCount = await getChaptersCount(doc.id);
+          }
+          
+          // التأكد من وجود صورة الغلاف
+          if (!data.coverImage) {
+            data.coverImage = '/placeholder-manga.jpg';
+          }
+          
+          return data;
+        })
       );
-      const chaptersSnapshot = await getDocs(chaptersQuery);
-      const chaptersData = chaptersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setChapters(chaptersData);
+      
+      if (reset) {
+        setManga(mangaData);
+      } else {
+        setManga(prev => [...prev, ...mangaData]);
+      }
+      
+      setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 12);
       
     } catch (error) {
-      console.error('خطأ في جلب تفاصيل المانغا:', error);
+      console.error('خطأ في جلب المانغا:', error);
     } finally {
       setLoading(false);
     }
   }
 
-  async function toggleFavorite() {
-    if (!currentUser) {
-      // توجيه المستخدم لتسجيل الدخول
-      return;
-    }
+  function handleSearch(e) {
+    e.preventDefault();
+    // تنفيذ البحث (يمكن تحسينه لاحقاً)
+    const filtered = manga.filter(item =>
+      item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setManga(filtered);
+  }
 
-    try {
-      setFavoriteLoading(true);
-      const userRef = doc(db, 'users', currentUser.uid);
+  function getPageTitle() {
+    switch (filter) {
+      case 'latest':
+        return 'أحدث المانغا';
+      case 'popular':
+        return 'الأكثر شعبية';
+      case 'favorites':
+        return 'المفضلة';
+      default:
+        return 'جميع المانغا';
+    }
+  }
+
+  function getPageIcon() {
+    switch (filter) {
+      case 'latest':
+        return <Clock className="h-6 w-6 text-blue-600" />;
+      case 'popular':
+        return <TrendingUp className="h-6 w-6 text-red-600" />;
+      case 'favorites':
+        return <Heart className="h-6 w-6 text-pink-600" />;
+      default:
+        return <BookOpen className="h-6 w-6 text-green-600" />;
+    }
+  }
+
+  // مكون MangaCard الجديد بالكامل
+  const MangaCard = ({ manga }) => {
+    const [imageLoaded, setImageLoaded] = useState(false);
+    const [imageError, setImageError] = useState(false);
+
+    const handleImageLoad = () => {
+      setImageLoaded(true);
+    };
+
+    const handleImageError = () => {
+      setImageError(true);
+      setImageLoaded(true);
+    };
+
+    // معالجة التاريخ بشكل آمن
+    const formatDate = (date) => {
+      if (!date) return 'غير محدد';
       
-      if (isFavorite) {
-        await updateDoc(userRef, {
-          favorites: arrayRemove(manga.id)
-        });
-        setIsFavorite(false);
-      } else {
-        await updateDoc(userRef, {
-          favorites: arrayUnion(manga.id)
-        });
-        setIsFavorite(true);
+      try {
+        if (date.toDate) {
+          return date.toDate().toLocaleDateString('ar-SA');
+        } else if (date instanceof Date) {
+          return date.toLocaleDateString('ar-SA');
+        }
+        return 'غير محدد';
+      } catch (error) {
+        console.error('خطأ في تنسيق التاريخ:', error);
+        return 'غير محدد';
       }
-    } catch (error) {
-      console.error('خطأ في تحديث المفضلة:', error);
-    } finally {
-      setFavoriteLoading(false);
-    }
-  }
+    };
 
-  if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <BookOpen className="h-12 w-12 text-blue-600 mx-auto mb-4 animate-pulse" />
-          <p className="text-gray-600">جاري تحميل تفاصيل المانغا...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!manga) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <Alert>
-          <AlertDescription>
-            لم يتم العثور على المانغا المطلوبة.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Hero Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-        {/* Cover Image */}
-        <div className="md:col-span-1">
-          <img
-            src={manga.coverImage || '/placeholder-manga.jpg'}
-            alt={manga.title}
-            className="w-full rounded-lg shadow-lg"
-          />
-        </div>
-        
-        {/* Manga Info */}
-        <div className="md:col-span-2">
-          <div className="mb-4">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">{manga.title}</h1>
-            {manga.alternativeTitle && (
-              <p className="text-lg text-gray-600 mb-4">{manga.alternativeTitle}</p>
-            )}
-            
-            {/* Status and Rating */}
-            <div className="flex items-center space-x-4 mb-4">
-              <Badge className={manga.status === 'ongoing' ? 'bg-green-600' : 'bg-blue-600'}>
-                {manga.status === 'ongoing' ? 'مستمر' : 'مكتمل'}
-              </Badge>
-              <div className="flex items-center space-x-2">
-                <Star className="h-5 w-5 text-yellow-500" />
-                <span className="font-semibold">{manga.rating || '0.0'}</span>
-                <span className="text-gray-500">({manga.ratingsCount || 0} تقييم)</span>
-              </div>
-            </div>
-            
-            {/* Genres */}
-            {manga.genres && manga.genres.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-4">
-                {manga.genres.map((genre) => (
-                  <Badge key={genre} variant="outline">
-                    <Tag className="h-3 w-3 mr-1" />
-                    {genre}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            
-            {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <BookOpen className="h-6 w-6 text-blue-600 mx-auto mb-1" />
-                <p className="text-sm text-gray-600">الفصول</p>
-                <p className="font-semibold">{chapters.length}</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <Eye className="h-6 w-6 text-green-600 mx-auto mb-1" />
-                <p className="text-sm text-gray-600">المشاهدات</p>
-                <p className="font-semibold">{manga.views || 0}</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <Heart className="h-6 w-6 text-red-600 mx-auto mb-1" />
-                <p className="text-sm text-gray-600">المفضلة</p>
-                <p className="font-semibold">{manga.favoritesCount || 0}</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <Calendar className="h-6 w-6 text-purple-600 mx-auto mb-1" />
-                <p className="text-sm text-gray-600">آخر تحديث</p>
-                <p className="font-semibold text-xs">
-                  {manga.lastUpdated?.toDate?.()?.toLocaleDateString('ar-SA') || 'غير محدد'}
-                </p>
-              </div>
-            </div>
-            
-            {/* Action Buttons */}
-            <div className="flex space-x-4">
-              {chapters.length > 0 && (
-                <Button size="lg" asChild>
-                  <Link to={`/manga/${manga.id}/chapter/${chapters[0].id}`}>
-                    <Play className="h-4 w-4 mr-2" />
-                    ابدأ القراءة
-                  </Link>
-                </Button>
+      <Card className="group overflow-hidden border-2 border-transparent hover:border-blue-300 hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+        <CardContent className="p-0 h-full flex flex-col">
+          <Link to={`/manga/${manga.id}`} className="flex flex-col h-full">
+            {/* صورة الغلاف مع تحسينات */}
+            <div className="relative overflow-hidden bg-gray-100">
+              {!imageLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
+                  <ImageIcon className="h-12 w-12 text-gray-400 animate-pulse" />
+                </div>
               )}
               
-              <Button
-                size="lg"
-                variant={isFavorite ? "default" : "outline"}
-                onClick={toggleFavorite}
-                disabled={favoriteLoading || !currentUser}
-              >
-                <Heart className={`h-4 w-4 mr-2 ${isFavorite ? 'fill-current' : ''}`} />
-                {isFavorite ? 'في المفضلة' : 'أضف للمفضلة'}
-              </Button>
-            </div>
-            
-            {!currentUser && (
-              <p className="text-sm text-gray-500 mt-2">
-                <Link to="/login" className="text-blue-600 hover:underline">
-                  سجل دخولك
-                </Link> لإضافة المانغا للمفضلة
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* Tabs Section */}
-           <Tabs defaultValue="info" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="info">المعلومات</TabsTrigger>
-          <TabsTrigger value="chapters">الفصول</TabsTrigger>
-          <TabsTrigger value="rating">التقييم</TabsTrigger>
-          <TabsTrigger value="comments">التعليقات</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="chapters">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <BookOpen className="h-5 w-5" />
-                <span>قائمة الفصول ({chapters.length})</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {chapters.length === 0 ? (
-                <div className="text-center py-8">
-                  <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">لا توجد فصول متاحة حالياً</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {chapters.map((chapter) => (
-                    <Link
-                      key={chapter.id}
-                      to={`/manga/${manga.id}/chapter/${chapter.id}`}
-                      className="block p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-semibold">
-                            الفصل {chapter.chapterNumber}: {chapter.title}
-                          </h3>
-                          {chapter.publishedAt && (
-                            <p className="text-sm text-gray-500 flex items-center mt-1">
-                              <Clock className="h-4 w-4 mr-1" />
-                              {chapter.publishedAt.toDate?.()?.toLocaleDateString('ar-SA')}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm text-gray-500">
-                          <Eye className="h-4 w-4" />
-                          <span>{chapter.views || 0}</span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="description">
-          <Card>
-            <CardHeader>
-              <CardTitle>الوصف</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose max-w-none">
-                <p className="text-gray-700 leading-relaxed">
-                  {manga.description || 'لا يوجد وصف متاح لهذه المانغا.'}
-                </p>
-                
-                {manga.author && (
-                  <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <User className="h-5 w-5 text-gray-600" />
-                      <span className="font-semibold">معلومات إضافية</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="font-medium">المؤلف:</span> {manga.author}
-                      </div>
-                      {manga.artist && (
-                        <div>
-                          <span className="font-medium">الرسام:</span> {manga.artist}
-                        </div>
-                      )}
-                      {manga.year && (
-                        <div>
-                          <span className="font-medium">سنة النشر:</span> {manga.year}
-                        </div>
-                      )}
-                      {manga.language && (
-                        <div>
-                          <span className="font-medium">اللغة:</span> {manga.language}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+              <img
+                src={imageError ? '/placeholder-manga.jpg' : manga.coverImage}
+                alt={manga.title}
+                className={`w-full h-64 object-cover transition-all duration-500 group-hover:scale-110 ${
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+                loading="lazy"
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+              
+              {/* Overlay effects */}
+              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity duration-300" />
+              
+              {/* Badges */}
+              <div className="absolute top-3 right-3 flex flex-col items-end space-y-2">
+                {manga.status && (
+                  <Badge className="bg-green-600 hover:bg-green-700 px-2 py-1 text-xs">
+                    {manga.status === 'ongoing' ? 'مستمر' : 'مكتمل'}
+                  </Badge>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+              
+              {/* Rating overlay */}
+              <div className="absolute bottom-3 left-3">
+                <div className="flex items-center bg-black bg-opacity-70 text-white px-2 py-1 rounded-full">
+                  <Star className="h-3 w-3 text-yellow-400 fill-current mr-1" />
+                  <span className="text-xs font-semibold">{manga.rating || '0.0'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* محتوى البطاقة */}
+            <div className="p-4 flex-1 flex flex-col">
+              {/* العنوان */}
+              <h3 className="font-bold text-lg mb-2 text-gray-900 group-hover:text-blue-700 transition-colors line-clamp-2 leading-tight">
+                {manga.title}
+              </h3>
+
+              {/* العنوان البديل */}
+              {manga.alternativeTitle && (
+                <p className="text-sm text-gray-500 mb-2 line-clamp-1">
+                  {manga.alternativeTitle}
+                </p>
+              )}
+
+              {/* الوصف */}
+              <p className="text-gray-600 text-sm mb-3 line-clamp-3 flex-1">
+                {manga.description || 'لا يوجد وصف متاح لهذه المانغا'}
+              </p>
+
+              {/* التصنيفات */}
+              {manga.genres && manga.genres.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {manga.genres.slice(0, 2).map((genre) => (
+                    <Badge 
+                      key={genre} 
+                      variant="secondary" 
+                      className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200"
+                    >
+                      {genres.find(g => g.value === genre)?.label || genre}
+                    </Badge>
+                  ))}
+                  {manga.genres.length > 2 && (
+                    <Badge variant="outline" className="text-xs px-2 py-1">
+                      +{manga.genres.length - 2}
+                    </Badge>
+                  )}
+                </div>
+              )}
+
+              {/* الإحصائيات */}
+              <div className="flex items-center justify-between text-sm text-gray-500 mt-auto pt-3 border-t border-gray-100">
+                <div className="flex items-center space-x-2">
+                  <BookOpen className="h-4 w-4 text-blue-600" />
+                  <span className="font-medium">{manga.chaptersCount || 0}</span>
+                  <span className="text-xs">فصل</span>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Eye className="h-4 w-4 text-green-600" />
+                  <span className="font-medium">
+                    {manga.views ? (manga.views > 1000 ? `${(manga.views / 1000).toFixed(1)}K` : manga.views) : 0}
+                  </span>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Heart className="h-4 w-4 text-red-600" />
+                  <span className="font-medium">{manga.favoritesCount || 0}</span>
+                </div>
+              </div>
+
+              {/* تاريخ النشر */}
+              <div className="text-xs text-gray-400 mt-2 flex items-center">
+                <Calendar className="h-3 w-3 mr-1" />
+                {formatDate(manga.createdAt)}
+              </div>
+            </div>
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center space-x-3 mb-4">
+          {getPageIcon()}
+          <h1 className="text-3xl font-bold text-gray-900">{getPageTitle()}</h1>
+        </div>
         
-        <TabsContent value="rating">
-          <Rating mangaId={manga.id} />
-        </TabsContent>
-        
-        <TabsContent value="comments">
-          <Comments mangaId={manga.id} chapterId="general" />
-        </TabsContent>
-      </Tabs>
+        {/* Search and Filters */}
+        <div className="flex flex-col md:flex-row gap-4 items-center">
+          <form onSubmit={handleSearch} className="flex-1 max-w-md">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="ابحث عن المانغا..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </form>
+          
+          {filter === 'all' && (
+            <div className="flex gap-2">
+              <Select value={selectedGenre} onValueChange={setSelectedGenre}>
+                <SelectTrigger className="w-48">
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="التصنيف" />
+                </SelectTrigger>
+                <SelectContent>
+                  {genres.map((genre) => (
+                    <SelectItem key={genre.value} value={genre.value}>
+                      {genre.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="الترتيب حسب" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Results */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="bg-gray-200 h-64 rounded-t-lg"></div>
+              <div className="p-4">
+                <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded mb-3"></div>
+                <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : manga.length === 0 ? (
+        <div className="text-center py-12">
+          <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500 text-lg">لا توجد مانغا متاحة</p>
+          <p className="text-gray-400 mt-2">
+            {filter === 'favorites' 
+              ? 'لم تضف أي مانغا إلى المفضلة بعد'
+              : 'جرب تغيير معايير البحث أو الفلتر'
+            }
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-8">
+            {manga.map((item) => (
+              <MangaCard key={item.id} manga={item} />
+            ))}
+          </div>
+          
+          {/* Load More Button */}
+          {hasMore && (
+            <div className="text-center">
+              <Button onClick={() => loadManga(false)} disabled={loading}>
+                {loading ? 'جاري التحميل...' : 'تحميل المزيد'}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
-
