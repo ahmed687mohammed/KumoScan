@@ -84,8 +84,7 @@ export default function Home() {
               <Badge className="absolute top-2 right-2 bg-blue-600">
                 {badgeText}
               </Badge>
-            )}
-            
+            ))
           <div className="p-4">
             <h3 className="font-semibold text-lg mb-2 group-hover:text-blue-600 transition-colors line-clamp-1">
               {manga.title}
