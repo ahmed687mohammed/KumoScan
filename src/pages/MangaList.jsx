@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { collection, query, orderBy, limit, getDocs, where, startAfter } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where, startAfter, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Search, Filter, BookOpen, Star, Clock, TrendingUp, Heart } from 'lucide-react';
@@ -52,6 +52,19 @@ export default function MangaList({ filter = 'all' }) {
       setSearchTerm(search);
     }
   }, [searchParams]);
+
+  // دالة جديدة لجلب عدد فصول المانغا
+  async function getChaptersCount(mangaId) {
+    try {
+      const chaptersRef = collection(db, 'manga', mangaId, 'chapters');
+      const chaptersQuery = query(chaptersRef);
+      const chaptersSnapshot = await getDocs(chaptersQuery);
+      return chaptersSnapshot.size;
+    } catch (error) {
+      console.error('خطأ في جلب عدد الفصول:', error);
+      return 0;
+    }
+  }
 
   async function loadManga(reset = false) {
     try {
@@ -128,10 +141,28 @@ export default function MangaList({ filter = 'all' }) {
       }
       
       const snapshot = await getDocs(mangaQuery);
-      const mangaData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      
+      // جلب البيانات مع عدد الفصول الحقيقي
+      const mangaData = await Promise.all(
+        snapshot.docs.map(async (doc) => {
+          const data = { id: doc.id, ...doc.data() };
+          
+          // إذا لم يكن هناك chaptersCount أو نريد التأكد من العدد الحقيقي
+          if (!data.chaptersCount || sortBy === 'chapters') {
+            data.chaptersCount = await getChaptersCount(doc.id);
+          }
+          
+          // التأكد من وجود صورة الغلاف
+          if (!data.coverImage) {
+            // محاولة جلب صورة افتراضية إذا لم توجد
+            const mangaDoc = await getDoc(doc.ref);
+            const fullData = mangaDoc.data();
+            data.coverImage = fullData?.coverImage || '/placeholder-manga.jpg';
+          }
+          
+          return data;
+        })
+      );
       
       if (reset) {
         setManga(mangaData);
@@ -194,6 +225,9 @@ export default function MangaList({ filter = 'all' }) {
               src={manga.coverImage || '/placeholder-manga.jpg'}
               alt={manga.title}
               className="w-full h-64 object-cover rounded-t-lg group-hover:scale-105 transition-transform duration-300"
+              onError={(e) => {
+                e.target.src = '/placeholder-manga.jpg';
+              }}
             />
             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity duration-300 rounded-t-lg" />
             {manga.status && (
@@ -340,4 +374,3 @@ export default function MangaList({ filter = 'all' }) {
     </div>
   );
 }
-
