@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { collection, query, orderBy, limit, getDocs, where, startAfter, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, Filter, BookOpen, Star, Clock, TrendingUp, Heart } from 'lucide-react';
+import { Search, Filter, BookOpen, Star, Clock, TrendingUp, Heart, Image as ImageIcon } from 'lucide-react';
 
 export default function MangaList({ filter = 'all' }) {
   const [manga, setManga] = useState([]);
@@ -216,60 +216,140 @@ export default function MangaList({ filter = 'all' }) {
     }
   }
 
-  const MangaCard = ({ manga }) => (
-    <Card className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-      <CardContent className="p-0">
-        <Link to={`/manga/${manga.id}`}>
-          <div className="relative">
-            <img
-              src={manga.coverImage || '/placeholder-manga.jpg'}
-              alt={manga.title}
-              className="w-full h-64 object-cover rounded-t-lg group-hover:scale-105 transition-transform duration-300"
-              onError={(e) => {
-                e.target.src = '/placeholder-manga.jpg';
-              }}
-            />
-            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity duration-300 rounded-t-lg" />
-            {manga.status && (
-              <Badge className="absolute top-2 right-2 bg-green-600">
-                {manga.status === 'ongoing' ? 'مستمر' : 'مكتمل'}
-              </Badge>
-            )}
-          </div>
-          <div className="p-4">
-            <h3 className="font-semibold text-lg mb-2 group-hover:text-blue-600 transition-colors line-clamp-1">
-              {manga.title}
-            </h3>
-            <p className="text-gray-600 text-sm mb-3 line-clamp-2">
-              {manga.description || 'لا يوجد وصف متاح'}
-            </p>
-            
-            {/* Genres */}
-            {manga.genres && manga.genres.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-3">
-                {manga.genres.slice(0, 3).map((genre) => (
-                  <Badge key={genre} variant="secondary" className="text-xs">
-                    {genres.find(g => g.value === genre)?.label || genre}
+  // مكون MangaCard الجديد بالكامل
+  const MangaCard = ({ manga }) => {
+    const [imageLoaded, setImageLoaded] = useState(false);
+    const [imageError, setImageError] = useState(false);
+
+    const handleImageLoad = () => {
+      setImageLoaded(true);
+    };
+
+    const handleImageError = () => {
+      setImageError(true);
+      setImageLoaded(true);
+    };
+
+    return (
+      <Card className="group overflow-hidden border-2 border-transparent hover:border-blue-300 hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+        <CardContent className="p-0 h-full flex flex-col">
+          <Link to={`/manga/${manga.id}`} className="flex flex-col h-full">
+            {/* صورة الغلاف مع تحسينات */}
+            <div className="relative overflow-hidden bg-gray-100">
+              {!imageLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
+                  <ImageIcon className="h-12 w-12 text-gray-400 animate-pulse" />
+                </div>
+              )}
+              
+              <img
+                src={imageError ? '/placeholder-manga.jpg' : manga.coverImage}
+                alt={manga.title}
+                className={`w-full h-64 object-cover transition-all duration-500 group-hover:scale-110 ${
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+                loading="lazy"
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+              
+              {/* Overlay effects */}
+              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity duration-300" />
+              
+              {/* Badges */}
+              <div className="absolute top-3 right-3 flex flex-col items-end space-y-2">
+                {manga.status && (
+                  <Badge className="bg-green-600 hover:bg-green-700 px-2 py-1 text-xs">
+                    {manga.status === 'ongoing' ? 'مستمر' : 'مكتمل'}
                   </Badge>
-                ))}
+                )}
+                {manga.isNew && (
+                  <Badge className="bg-blue-600 hover:bg-blue-700 px-2 py-1 text-xs">
+                    جديد
+                  </Badge>
+                )}
               </div>
-            )}
-            
-            <div className="flex items-center justify-between text-sm text-gray-500">
-              <div className="flex items-center space-x-2">
-                <BookOpen className="h-4 w-4" />
-                <span>{manga.chaptersCount || 0} فصل</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Star className="h-4 w-4 text-yellow-500" />
-                <span>{manga.rating || '0.0'}</span>
+              
+              {/* Rating overlay */}
+              <div className="absolute bottom-3 left-3">
+                <div className="flex items-center bg-black bg-opacity-70 text-white px-2 py-1 rounded-full">
+                  <Star className="h-3 w-3 text-yellow-400 fill-current mr-1" />
+                  <span className="text-xs font-semibold">{manga.rating || '0.0'}</span>
+                </div>
               </div>
             </div>
-          </div>
-        </Link>
-      </CardContent>
-    </Card>
-  );
+
+            {/* محتوى البطاقة */}
+            <div className="p-4 flex-1 flex flex-col">
+              {/* العنوان */}
+              <h3 className="font-bold text-lg mb-2 text-gray-900 group-hover:text-blue-700 transition-colors line-clamp-2 leading-tight">
+                {manga.title}
+              </h3>
+
+              {/* العنوان البديل */}
+              {manga.alternativeTitle && (
+                <p className="text-sm text-gray-500 mb-2 line-clamp-1">
+                  {manga.alternativeTitle}
+                </p>
+              )}
+
+              {/* الوصف */}
+              <p className="text-gray-600 text-sm mb-3 line-clamp-3 flex-1">
+                {manga.description || 'لا يوجد وصف متاح لهذه المانغا'}
+              </p>
+
+              {/* التصنيفات */}
+              {manga.genres && manga.genres.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {manga.genres.slice(0, 2).map((genre) => (
+                    <Badge 
+                      key={genre} 
+                      variant="secondary" 
+                      className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200"
+                    >
+                      {genres.find(g => g.value === genre)?.label || genre}
+                    </Badge>
+                  ))}
+                  {manga.genres.length > 2 && (
+                    <Badge variant="outline" className="text-xs px-2 py-1">
+                      +{manga.genres.length - 2}
+                    </Badge>
+                  )}
+                </div>
+              )}
+
+              {/* الإحصائيات */}
+              <div className="flex items-center justify-between text-sm text-gray-500 mt-auto pt-3 border-t border-gray-100">
+                <div className="flex items-center space-x-2">
+                  <BookOpen className="h-4 w-4 text-blue-600" />
+                  <span className="font-medium">{manga.chaptersCount || 0}</span>
+                  <span className="text-xs">فصل</span>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Eye className="h-4 w-4 text-green-600" />
+                  <span className="font-medium">{manga.views ? (manga.views > 1000 ? `${(manga.views / 1000).toFixed(1)}K` : manga.views) : 0}</span>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Heart className="h-4 w-4 text-red-600" />
+                  <span className="font-medium">{manga.favoritesCount || 0}</span>
+                </div>
+              </div>
+
+              {/* تاريخ النشر */}
+              {manga.createdAt && (
+                <div className="text-xs text-gray-400 mt-2 flex items-center">
+                  <Calendar className="h-3 w-3 mr-1" />
+                  {manga.createdAt.toDate?.()?.toLocaleDateString('ar-SA') || 'غير محدد'}
+                </div>
+              )}
+            </div>
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
