@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { collection, query, orderBy, limit, getDocs, where, startAfter, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, Filter, BookOpen, Star, Clock, TrendingUp, Heart, Image as ImageIcon } from 'lucide-react';
+import { Search, Filter, BookOpen, Star, Clock, TrendingUp, Heart, Image as ImageIcon, Calendar, Eye } from 'lucide-react';
 
 export default function MangaList({ filter = 'all' }) {
   const [manga, setManga] = useState([]);
@@ -116,6 +116,9 @@ export default function MangaList({ filter = 'all' }) {
           case 'chapters':
             orderField = 'chaptersCount';
             break;
+          default:
+            orderField = 'createdAt';
+            orderDirection = 'desc';
         }
         
         mangaQuery = query(
@@ -154,10 +157,7 @@ export default function MangaList({ filter = 'all' }) {
           
           // التأكد من وجود صورة الغلاف
           if (!data.coverImage) {
-            // محاولة جلب صورة افتراضية إذا لم توجد
-            const mangaDoc = await getDoc(doc.ref);
-            const fullData = mangaDoc.data();
-            data.coverImage = fullData?.coverImage || '/placeholder-manga.jpg';
+            data.coverImage = '/placeholder-manga.jpg';
           }
           
           return data;
@@ -230,6 +230,23 @@ export default function MangaList({ filter = 'all' }) {
       setImageLoaded(true);
     };
 
+    // معالجة التاريخ بشكل آمن
+    const formatDate = (date) => {
+      if (!date) return 'غير محدد';
+      
+      try {
+        if (date.toDate) {
+          return date.toDate().toLocaleDateString('ar-SA');
+        } else if (date instanceof Date) {
+          return date.toLocaleDateString('ar-SA');
+        }
+        return 'غير محدد';
+      } catch (error) {
+        console.error('خطأ في تنسيق التاريخ:', error);
+        return 'غير محدد';
+      }
+    };
+
     return (
       <Card className="group overflow-hidden border-2 border-transparent hover:border-blue-300 hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
         <CardContent className="p-0 h-full flex flex-col">
@@ -261,11 +278,6 @@ export default function MangaList({ filter = 'all' }) {
                 {manga.status && (
                   <Badge className="bg-green-600 hover:bg-green-700 px-2 py-1 text-xs">
                     {manga.status === 'ongoing' ? 'مستمر' : 'مكتمل'}
-                  </Badge>
-                )}
-                {manga.isNew && (
-                  <Badge className="bg-blue-600 hover:bg-blue-700 px-2 py-1 text-xs">
-                    جديد
                   </Badge>
                 )}
               </div>
@@ -328,7 +340,9 @@ export default function MangaList({ filter = 'all' }) {
                 
                 <div className="flex items-center space-x-2">
                   <Eye className="h-4 w-4 text-green-600" />
-                  <span className="font-medium">{manga.views ? (manga.views > 1000 ? `${(manga.views / 1000).toFixed(1)}K` : manga.views) : 0}</span>
+                  <span className="font-medium">
+                    {manga.views ? (manga.views > 1000 ? `${(manga.views / 1000).toFixed(1)}K` : manga.views) : 0}
+                  </span>
                 </div>
                 
                 <div className="flex items-center space-x-2">
@@ -338,12 +352,10 @@ export default function MangaList({ filter = 'all' }) {
               </div>
 
               {/* تاريخ النشر */}
-              {manga.createdAt && (
-                <div className="text-xs text-gray-400 mt-2 flex items-center">
-                  <Calendar className="h-3 w-3 mr-1" />
-                  {manga.createdAt.toDate?.()?.toLocaleDateString('ar-SA') || 'غير محدد'}
-                </div>
-              )}
+              <div className="text-xs text-gray-400 mt-2 flex items-center">
+                <Calendar className="h-3 w-3 mr-1" />
+                {formatDate(manga.createdAt)}
+              </div>
             </div>
           </Link>
         </CardContent>
@@ -380,7 +392,7 @@ export default function MangaList({ filter = 'all' }) {
               <Select value={selectedGenre} onValueChange={setSelectedGenre}>
                 <SelectTrigger className="w-48">
                   <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue />
+                  <SelectValue placeholder="التصنيف" />
                 </SelectTrigger>
                 <SelectContent>
                   {genres.map((genre) => (
@@ -393,7 +405,7 @@ export default function MangaList({ filter = 'all' }) {
               
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger className="w-48">
-                  <SelectValue />
+                  <SelectValue placeholder="الترتيب حسب" />
                 </SelectTrigger>
                 <SelectContent>
                   {sortOptions.map((option) => (
