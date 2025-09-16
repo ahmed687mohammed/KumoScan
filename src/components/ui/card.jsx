@@ -43,7 +43,7 @@ const MangaCard = ({ manga }) => {
             />
             
             {/* Overlay effects */}
-            <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
+            
             
             {/* Badge الحالة */}
             {manga.status && (
